@@ -1,0 +1,456 @@
+Applies on top of tools/no-float-doubleword.patch to decompals/mips-binutils-2.6
+(commit 54514de, tag v0.3). Makes the rebuilt assembler behave like the one that
+built the ROM. KMC maps -mips3 to ISA 2 internally, so every ISA-gated hazard rule
+has to be read with that in mind:
+  - -g2 keeps hazard nops conditional (mips_optimize 1) instead of unconditional;
+  - no nop after mtc1/ctc1 before a use (the VR4300 interlocks them);
+  - no nop after mfc1/cfc1 before a use or before a .set noreorder block
+    (GCC's filled `jal` right after `mfc1 $a0` is common);
+  - exactly one nop after an FP compare when a pseudo-op follows, not two;
+  - no nop when one instruction already separates an FP compare from the
+    pseudo-op before its branch (`c.lt.s; addiu; .set noreorder; bc1t`);
+  - the sym($reg) load macro always uses $at as its scratch register;
+  - no HI/LO hazard nops at a `.set noreorder` directive: GCC's filled
+    `bnez`/`j` right after `mfhi`/`mflo` follows at once (the padding before
+    a `div`/`mult` macro stays: `mfhi; lhu; nop; div` is in the ROM);
+  - the VR4300 mulmul fix (gas/input-file.c, on by default) no longer treats a
+    line starting in column 0 (a label) as a float multiply: the ROM pads only
+    `mul.s`/`mul.d` followed by another `mul*`, so the Makefile drops
+    `--vr4300mul-off` (60 `mul; nop; mul` sites in the ROM);
+  - `--fp-move-nops` (gas/as.c) pads mtc1/mfc1 and the two-instruction FP
+    compare hazard like an unpatched assembler at ISA 1, for the libultra
+    unit only (its objects came with those nops): src/18020_C0800.o gets
+    `-Wa,--fp-move-nops` in the Makefile;
+  - a float multiply never sits in a branch delay slot (0 cases in the ROM,
+    45 in our build): in a .set noreorder block the slot's mul.s/mul.d is
+    moved in front of the branch and the slot gets a nop; in reorder mode
+    one is never swapped in. Not under --fp-move-nops (the libultra unit's
+    assembler did fill slots with multiplies);
+  - an FP compare followed by a label or directive is padded only when the
+    next instruction reads the condition code (`c.eq.s; j` has no nop in
+    the ROM; `c.lt.s; .L: nop; bc1t` keeps its nop after the label);
+  - a label defined before a hazard nop stays in front of it (`c.lt.s; .L: nop;
+    bc1t`, 30 times in the ROM, never the moved form): neither append_insn nor
+    mips_emit_delays moves insn_label past the nops it inserts.
+  - a multiply after a float multiply is padded even when a branch without
+    link and its delay-slot nop sit between them (`mul.s; j .L; nop; nop;
+    mul.s` 10 times and `mul.s; bc1fl .L; nop; nop; mul.s` 9 times in the ROM,
+    never without the second nop): the text-level fix cannot see through the
+    branch, so append_insn checks the three emitted words before a mul*; when
+    the second multiply is moved out of the next branch's delay slot, the nop
+    goes in front of it (nop, mul, branch, nop; a label before the branch stays
+    on the nop). Not under --fp-move-nops;
+Verified 2026-10-15/17 by clean worktree builds and per-function objdiff diffs:
+faithful rebuild 417/417 matched; with all fixes 538 matched, 0 lost (10-16);
+label rule 552 -> 555 matched, 0 lost, 9 drafts improved (10-17);
+HI/LO-at-.set rule 681 -> 687 matched, 0 lost, 16 drafts improved (10-19);
+mulmul label fix with the flag dropped 687 -> 700 matched, 0 lost, 45 drafts improved (10-19);
+--fp-move-nops on the libultra unit 152 -> 163 matched there, 0 lost, 38 drafts improved (10-19);
+float multiply out of delay slots 752 -> 758 matched, 0 lost, 30 drafts improved (10-20);
+FP compare padded only before a condition-code reader 758 -> 761 matched, 0 lost, 25 drafts improved (10-20).
+mulmul through a branch and its slot nop 1027 -> 1028 matched, 0 lost, 3 drafts improved (10-29).
+Re-apply with: git apply --ignore-whitespace tools/kmc-as-fixes.patch
+Build: ./configure --target=mips-kmc-elf --host=i386-pc-linux --build=i386-pc-linux
+       make -C {libiberty,bfd,opcodes,gas} CFLAGS='-fno-stack-protector -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0 -std=gnu89 -fcommon -Wno-error -Wno-implicit-function-declaration -Wno-implicit-int -Wno-return-type -Wno-incompatible-pointer-types -Wno-int-conversion'
+       cp gas/as.new tools/build/as   (rm gas/targ-cpu.o first to force the backend to rebuild)
+
+
+diff --git a/gas/as.c b/gas/as.c
+index 661b4f0..99ee823 100644
+--- a/gas/as.c
++++ b/gas/as.c
+@@ -223,6 +223,7 @@ common_emul_init ()
+ extern int vr4300mul_enabled;
+ extern int force_n64align_enabled;
+ extern int no_float_doubleword;
++extern int kmc_fp_nops;
+ 
+ void
+ parse_args (pargc, pargv)
+@@ -265,6 +266,7 @@ parse_args (pargc, pargv)
+     {"vr4300mul-off", no_argument, NULL, 'V'},
+     {"force-n64align", no_argument, NULL, 'N'},
+     {"no-float-doubleword", no_argument, NULL, 'F'},
++    {"fp-move-nops", no_argument, NULL, 'P'},
+ #define OPTION_NOCPP (OPTION_STD_BASE + 1)
+     {"nocpp", no_argument, NULL, OPTION_NOCPP},
+ #define OPTION_STATISTICS (OPTION_STD_BASE + 2)
+@@ -508,6 +510,10 @@ parse_args (pargc, pargv)
+ 	  no_float_doubleword = 1;
+ 	  break;
+ 
++	case 'P':
++	  kmc_fp_nops = 1;
++	  break;
++
+ 	case 'w':
+ 	  break;
+ 
+diff --git a/gas/config/tc-mips.c b/gas/config/tc-mips.c
+index 8b2b066..75c4ffb 100644
+--- a/gas/config/tc-mips.c
++++ b/gas/config/tc-mips.c
+@@ -515,6 +515,93 @@ static int mips_4100 = -1;
+ /* Whether the processor uses hardware interlocks, and thus does not
+    require nops to be inserted.  */
+ static int interlocks = -1;
++/* KMC: --fp-move-nops pads coprocessor moves and FP compares the way an
++   unpatched assembler at ISA 1 would (the libultra objects need it).  */
++int kmc_fp_nops = 0;
++/* KMC: the ROM's assembler never leaves a float multiply in a branch delay
++   slot: it moves the multiply in front of the branch and puts a nop in the
++   slot (45 slots in our build, 0 in the ROM).  Not for the libultra unit
++   (--fp-move-nops): its assembler did fill slots with multiplies.  */
++static int kmc_unfill_fmul = 1;
++#define KMC_IS_FMUL(mo) ((mo) != NULL && (mo)->name != NULL && ((mo)->name[0] == 'm') && strcmp ((mo)->name, "mul.s") == 0 || (mo) != NULL && (mo)->name != NULL && strcmp ((mo)->name, "mul.d") == 0)
++#define FP_ISA (kmc_fp_nops ? 1 : mips_isa)
++/* KMC: set while a `.set noreorder' directive flushes hazards: the ROM's
++   assembler did not pad a HI/LO read there (the padding before a div/mult
++   macro stays).  */
++static int mips_set_noreorder_pending = 0;
++/* KMC: an FP compare followed by a label or directive is padded only if the
++   next instruction reads the condition code (`c.eq.s; j' has no nop in the
++   ROM, `c.lt.s; .L: bc1t' has one, after the label).  */
++static int kmc_cc_pending = 0;
++/* KMC: the ROM pads a multiply that follows a float multiply even when a
++   branch and its delay-slot nop sit between them (`mul.s; j .L; nop; nop;
++   mul.s' 10 times, `mul.s; bc1fl .L; nop; nop; mul.s' 9 times, never
++   without the second nop), also when the second multiply comes out of the
++   next branch's delay slot.  The text-level mulmul fix in input-file.c
++   cannot see through the branch, so look at the emitted words.  */
++extern int vr4300mul_enabled;
++static unsigned long
++kmc_word (p)
++     char *p;
++{
++  unsigned char *u = (unsigned char *) p;
++
++  if (target_big_endian)
++    return ((unsigned long) u[0] << 24) | ((unsigned long) u[1] << 16)
++	   | ((unsigned long) u[2] << 8) | u[3];
++  return ((unsigned long) u[3] << 24) | ((unsigned long) u[2] << 16)
++	 | ((unsigned long) u[1] << 8) | u[0];
++}
++
++/* mul.s or mul.d.  */
++static int
++kmc_word_is_fmul (w)
++     unsigned long w;
++{
++  return ((w >> 26) == 0x11
++	  && (((w >> 21) & 0x1f) == 0x10 || ((w >> 21) & 0x1f) == 0x11)
++	  && (w & 0x3f) == 2);
++}
++
++/* A jump or branch without link: j, b, beq/bne/blez/bgtz and their
++   likely forms, bltz/bgez(l), bc1f/bc1t(l).  */
++static int
++kmc_word_is_jump (w)
++     unsigned long w;
++{
++  unsigned long op = w >> 26;
++
++  if (op == 2 || (op >= 4 && op <= 7) || (op >= 0x14 && op <= 0x17))
++    return 1;
++  if (op == 1 && ((w >> 16) & 0x1f) <= 3)
++    return 1;
++  if (op == 0x11 && ((w >> 21) & 0x1f) == 8)
++    return 1;
++  return 0;
++}
++
++/* Nonzero if the three words before P in frag_now are a float multiply,
++   a branch and a nop.  */
++static int
++kmc_fmul_jump_nop_before (p)
++     char *p;
++{
++  if (p - frag_now->fr_literal < 12)
++    return 0;
++  return (kmc_word_is_fmul (kmc_word (p - 12))
++	  && kmc_word_is_jump (kmc_word (p - 8))
++	  && kmc_word (p - 4) == 0);
++}
++
++/* The names the text-level fix counts as a multiply: mul*, dmul*.  */
++static int
++kmc_is_mul_name (name)
++     const char *name;
++{
++  if (name[0] == 'd')
++    name++;
++  return strncmp (name, "mul", 3) == 0;
++}
+ 
+ /* MIPS PIC level.  */
+ 
+@@ -1293,10 +1380,10 @@ append_insn (place, ip, address_expr, re
+ 
+       /* The previous insn might require a delay slot, depending upon
+ 	 the contents of the current insn.  */
+-      if (mips_isa < 4
+-	  && ((prev_pinfo & INSN_LOAD_COPROC_DELAY)
+-	      || (mips_isa < 2
+-		  && (prev_pinfo & INSN_LOAD_MEMORY_DELAY))))
++      /* KMC: the VR4300 interlocks mfc1/cfc1; the ROM has no padding
++	 after them.  Keep the coprocessor load delay for MIPS I only.  */
++      if ((FP_ISA < 2 && (prev_pinfo & INSN_LOAD_COPROC_DELAY))
++	  || (mips_isa < 2 && (prev_pinfo & INSN_LOAD_MEMORY_DELAY)))
+ 	{
+ 	  /* A load from a coprocessor or from memory.  All load
+ 	     delays delay the use of general register rt for one
+@@ -1310,10 +1397,12 @@ append_insn (place, ip, address_expr, re
+ 				0))
+ 	    ++nops;
+ 	}
+-      else if (mips_isa < 4
+-	       && ((prev_pinfo & INSN_COPROC_MOVE_DELAY)
+-		   || (mips_isa < 2
+-		       && (prev_pinfo & INSN_COPROC_MEMORY_DELAY))))
++      /* KMC's assembler (which maps -mips3 to ISA 2 so that address
++	 arithmetic stays 32-bit) does not pad moves to the coprocessor:
++	 the VR4300 interlocks mtc1/ctc1.  Keep the rule for MIPS I only.  */
++      else if ((FP_ISA < 2 && (prev_pinfo & INSN_COPROC_MOVE_DELAY))
++	       || (mips_isa < 2
++		   && (prev_pinfo & INSN_COPROC_MEMORY_DELAY)))
+ 	{
+ 	  /* A generic coprocessor delay.  The previous instruction
+ 	     modified a coprocessor general or control register.  If
+@@ -1445,7 +1534,10 @@ append_insn (place, ip, address_expr, re
+                  all needed nop instructions themselves.  */
+ 	      frag_grow (40);
+ 	    }
+-	  if (insn_label != NULL)
++	  /* KMC: a label defined before a hazard nop stays in front of it
++	     (the ROM has `c.lt.s; .L: nop; bc1t` 30 times and the moved
++	     form never), so do not move the label past the nops.  */
++	  if (0 && insn_label != NULL)
+ 	    {
+ 	      assert (S_GET_SEGMENT (insn_label) == now_seg);
+ 	      insn_label->sy_frag = frag_now;
+@@ -1454,6 +1546,20 @@ append_insn (place, ip, address_expr, re
+ 	}
+     }
+   
++  if (place == NULL && kmc_cc_pending)
++    {
++      if (ip->insn_mo->pinfo & INSN_READ_COND_CODE)
++	emit_nop ();
++      kmc_cc_pending = 0;
++    }
++
++  /* KMC: `mul.s; j; nop' (or any branch without link) then a multiply
++     gets one more nop.  */
++  if (place == NULL && vr4300mul_enabled != 0 && ! kmc_fp_nops
++      && kmc_is_mul_name (ip->insn_mo->name)
++      && kmc_fmul_jump_nop_before (frag_now->fr_literal + frag_now_fix ()))
++    emit_nop ();
++
+   if (place == NULL)
+     f = frag_more (4);
+   else
+@@ -1544,6 +1650,8 @@ append_insn (place, ip, address_expr, re
+ 	      /* If the previous insn is already in a branch delay
+ 		 slot, then we can not swap.  */
+ 	      || prev_insn_is_delay_slot
++	      /* KMC: a float multiply never goes into the slot.  */
++	      || (kmc_unfill_fmul && ! kmc_fp_nops && KMC_IS_FMUL (prev_insn.insn_mo))
+ 	      /* If the previous previous insn was in a .set
+ 		 noreorder, we can't swap.  Actually, the MIPS
+ 		 assembler will swap in this situation.  However, gcc
+@@ -1741,6 +1849,73 @@ append_insn (place, ip, address_expr, re
+       prev_insn_valid = 1;
+     }
+ 
++  /* KMC: in a .set noreorder block (GCC's filled slots), a float multiply
++     in a branch delay slot is moved in front of the branch and the slot
++     gets a nop.  */
++  if (place == NULL && mips_noreorder && kmc_unfill_fmul && ! kmc_fp_nops)
++    {
++      static struct frag *nr_frag;
++      static long nr_where;
++      static fixS *nr_fixp;
++      static unsigned long nr_pinfo;
++      static int nr_valid;
++
++      if (nr_valid
++	  && nr_frag == frag_now
++	  && (nr_pinfo & (INSN_UNCOND_BRANCH_DELAY | INSN_COND_BRANCH_DELAY
++			  | INSN_COND_BRANCH_LIKELY))
++	  && fixp == NULL
++	  && KMC_IS_FMUL (ip->insn_mo))
++	{
++	  char *prev_f = nr_frag->fr_literal + nr_where;
++	  char temp[4];
++
++	  if (vr4300mul_enabled != 0 && kmc_fmul_jump_nop_before (prev_f))
++	    {
++	      /* KMC: `mul.s; j; nop' before the branch: the moved multiply
++		 gets a nop in front of it (nop, mul, branch, nop).  The
++		 branch's word was where the nop goes now, so a label
++		 defined before the branch stays on the nop.  */
++	      char *n1, *n2;
++
++	      frag_grow (8);
++	      n1 = frag_more (4);
++	      n2 = frag_more (4);
++	      memcpy (n1, prev_f, 4);
++	      md_number_to_chars (prev_f, 0, 4);
++	      md_number_to_chars (n2, 0, 4);
++	      if (nr_fixp)
++		{
++		  nr_fixp->fx_frag = frag_now;
++		  nr_fixp->fx_where = n1 - frag_now->fr_literal;
++		}
++	      nr_valid = 0;
++	    }
++	  else
++	    {
++	  memcpy (temp, prev_f, 4);
++	  memcpy (prev_f, f, 4);
++	  memcpy (f, temp, 4);
++	  if (nr_fixp)
++	    nr_fixp->fx_where = f - frag_now->fr_literal;
++	  emit_nop ();
++	  nr_valid = 0;
++	    }
++	}
++      else
++	{
++	  nr_frag = frag_now;
++	  nr_where = f - frag_now->fr_literal;
++	  nr_fixp = fixp;
++	  nr_pinfo = pinfo;
++	  nr_valid = 1;
++	}
++    }
++  else
++    {
++      /* nothing: tracking only matters inside noreorder blocks */
++    }
++
+   /* We just output an insn, so the next one doesn't have a label.  */
+   insn_label = NULL;
+ }
+@@ -1773,12 +1948,18 @@ mips_emit_delays ()
+       int nop;
+ 
+       nop = 0;
+-      if ((mips_isa < 4
+-	   && (prev_insn.insn_mo->pinfo
+-	       & (INSN_LOAD_COPROC_DELAY
+-		  | INSN_COPROC_MOVE_DELAY
+-		  | INSN_WRITE_COND_CODE)))
+-	  || (! interlocks
++      /* KMC: when something other than an instruction follows, the ROM
++	 shows one nop after an FP compare and none after mfc1/cfc1
++	 (the VR4300 interlocks the latter).  */
++      if (mips_isa < 4
++	  && (prev_insn.insn_mo->pinfo & INSN_WRITE_COND_CODE))
++	kmc_cc_pending = 1;
++      if ((0
++	   && (prev_insn.insn_mo->pinfo & INSN_WRITE_COND_CODE))
++	  || (FP_ISA < 2
++	      && (prev_insn.insn_mo->pinfo
++		  & (INSN_LOAD_COPROC_DELAY | INSN_COPROC_MOVE_DELAY)))
++	  || ((! interlocks && ! mips_set_noreorder_pending)
+ 	      && (prev_insn.insn_mo->pinfo
+ 		  & (INSN_READ_LO
+ 		     | INSN_READ_HI)))
+@@ -1788,23 +1969,26 @@ mips_emit_delays ()
+ 		     | INSN_COPROC_MEMORY_DELAY))))
+ 	{
+ 	  nop = 1;
+-	  if ((mips_isa < 4
+-	       && (prev_insn.insn_mo->pinfo & INSN_WRITE_COND_CODE))
+-	      || (! interlocks
+-		  && ((prev_insn.insn_mo->pinfo & INSN_READ_HI)
+-		      || (prev_insn.insn_mo->pinfo & INSN_READ_LO))))
++	  if ((! interlocks && ! mips_set_noreorder_pending)
++	      && ((prev_insn.insn_mo->pinfo & INSN_READ_HI)
++		  || (prev_insn.insn_mo->pinfo & INSN_READ_LO)))
+ 	    emit_nop ();
+ 	}
+-      else if ((mips_isa < 4
++      /* KMC: one instruction after an FP compare already satisfies the
++	 condition-code hazard; the ROM has `c.lt.s; addiu; bc1t` with no
++	 nop even across a .set noreorder.  Keep the two-instruction rule
++	 for MIPS I only.  */
++      else if ((FP_ISA < 2
+ 		&& (prev_prev_insn.insn_mo->pinfo & INSN_WRITE_COND_CODE))
+-	       || (! interlocks
++	       || ((! interlocks && ! mips_set_noreorder_pending)
+ 		   && ((prev_prev_insn.insn_mo->pinfo & INSN_READ_HI)
+ 		       || (prev_prev_insn.insn_mo->pinfo & INSN_READ_LO))))
+ 	nop = 1;
+       if (nop)
+ 	{
+ 	  emit_nop ();
+-	  if (insn_label != NULL)
++	  /* KMC: see append_insn; labels are not moved past nops.  */
++	  if (0 && insn_label != NULL)
+ 	    {
+ 	      assert (S_GET_SEGMENT (insn_label) == now_seg);
+ 	      insn_label->sy_frag = frag_now;
+@@ -3447,7 +3631,11 @@ macro (ip)
+     case M_LWU_AB:
+       s = "lwu";
+     ld:
+-      if (breg == treg || coproc || lr)
++      /* KMC's assembler always used $at as the scratch register when
++	 a base register is present (lui $at; addu $at,$at,$breg;
++	 <op> $treg,%lo(sym)($at)), where upstream gas reuses $treg.
++	 Nintendo 64 games built with it contain only the $at form.  */
++      if (breg == treg || coproc || lr || breg != 0)
+ 	{
+ 	  tempreg = AT;
+ 	  used_at = 1;
+@@ -5852,8 +6040,11 @@ md_parse_option (c, arg)
+       /* When the MIPS assembler sees -g or -g2, it does not do
+          optimizations which limit full symbolic debugging.  We take
+          that to be equivalent to -O0.  */
++      /* KMC's assembler keeps hazard-driven nops conditional under -g2
++	 and only stops swapping branches; upstream's -O0 semantics
++	 (unconditional nops) do not match Nintendo 64 output.  */
+       if (mips_debug == 2)
+-	mips_optimize = 0;
++	mips_optimize = 1;
+       break;
+ 
+     case OPTION_MIPS1:
+@@ -6817,6 +7008,10 @@ s_mipsset (x)
+ 
+   if (strcmp (name, "reorder") == 0)
+     {
++      kmc_cc_pending = 0;
++    }
++  if (strcmp (name, "reorder") == 0)
++    {
+       if (mips_noreorder)
+ 	{
+ 	  prev_insn_unreordered = 1;
+@@ -6826,7 +7021,9 @@ s_mipsset (x)
+     }
+   else if (strcmp (name, "noreorder") == 0)
+     {
++      mips_set_noreorder_pending = 1;
+       mips_emit_delays ();
++      mips_set_noreorder_pending = 0;
+       mips_noreorder = 1;
+       mips_any_noreorder = 1;
+     }
+diff --git a/gas/input-file.c b/gas/input-file.c
+index 50fb2f3..e4efe80 100644
+--- a/gas/input-file.c
++++ b/gas/input-file.c
+@@ -237,7 +237,9 @@ char* read_asm(const char *pathname, size_t* output_size) {
+                         cur_insn_first_char = *cur_insn;
+                         if (prev_insn_was_float_mul == 0)
+                         {
+-                            if ((local_28 == cur_insn) ||
++                            /* KMC: a line that starts in column 0 (a label) is not a float
++                               multiply; the ROM pads only mul.s/mul.d followed by mul*.  */
++                            if (
+                                 (((cur_insn_first_char == 'm' && (cur_insn[1] == 'u')) &&
+                                     (((cur_insn[2] == 'l' && (cur_insn[3] == '.')) &&
+                                     ((cur_insn[4] == 's' || (cur_insn[4] == 'd'))))))))

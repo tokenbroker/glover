@@ -1,0 +1,51 @@
+Applies on top of tools/kmc-as-pool-float.patch (independent of it: also applies straight after
+tools/kmc-as-libultra-nops.patch or tools/kmc-as-hilo-libultra.patch). Game units only (--no-float-doubleword).
+
+`li.d $fN,c` (GCC's spelling of a non-zero double literal) loaded its pool entry with `ldc1` even under
+--no-float-doubleword; tools/no-float-doubleword.patch split only the explicit l.d/s.d forms. Now the pooled load
+is the same lwc1 pair as l.d:
+    lui $at,%hi(pool); lwc1 $fN+1,%lo(pool)($at); lwc1 $fN,%lo(pool+4)($at)
+ROM evidence (asm/nonmatchings of the game units): 1028 `lui $at; lwc1; lwc1` double loads, every one with the odd
+register at offset 0 first and the even register at +4 second; no ldc1 in the game code at all.
+
+Also under --no-float-doubleword the pool entry of a double is aligned to 4 instead of 8: 489 of the 1028 distinct
+addresses those ROM pairs load from are 4 mod 8 (539 are 0 mod 8). This only moves data inside the object's
+.rodata; nothing reads these entries with ldc1.
+
+Verified 2026-11-20 with the as_verify method (old = the four-patch assembler, new = all seven patches): 1181 ->
+1183 matched, gained func_801CC118 (hilo patch) and func_8016A058 (this patch: case 30, `/ 5.0`), nothing lost,
+no library object changed except 18020_C8EB0 (func_801CC118).
+
+Re-apply with: git apply --ignore-whitespace tools/kmc-as-lid-pair.patch
+
+diff --git a/gas/config/tc-mips.c b/gas/config/tc-mips.c
+index bd194e5..99e7da5 100644
+--- a/gas/config/tc-mips.c
++++ b/gas/config/tc-mips.c
+@@ -4033,7 +4033,12 @@ macro (ip)
+ 	      macro_build_lui ((char *) NULL, &icnt, &offset_expr, AT);
+ 	    }
+ 	      
+-	  if (mips_isa >= 2)
++	  /* KMC: under --no-float-doubleword a pooled double is loaded as
++	     the lwc1 pair of `dob' below, like l.d: `lui $at,%hi(pool);
++	     lwc1 $fN+1,%lo(pool)($at); lwc1 $fN,%lo(pool+4)($at)' (1028
++	     such pairs in the ROM's game code, odd register and offset 0
++	     first in every one; no ldc1 at all).  */
++	  if (mips_isa >= 2 && ! no_float_doubleword)
+ 	    {
+ 	      macro_build ((char *) NULL, &icnt, &offset_expr, "ldc1",
+ 			   "T,o(b)", treg, (int) BFD_RELOC_LO16, AT);
+@@ -5617,7 +5622,11 @@ mips_ip (str, ip)
+ 			break;
+ 		      }
+ 		    new_seg = subseg_new (newname, (subsegT) 0);
+-		    frag_align (*args == 'l' ? 2 : 3, 0);
++		    /* KMC: the game objects' doubles sit on 4-byte
++		       boundaries (489 of the 1028 distinct double pool
++		       addresses the ROM's game code loads are 4 mod 8);
++		       nothing reads them with ldc1 there.  */
++		    frag_align (*args == 'l' || no_float_doubleword ? 2 : 3, 0);
+ 		    if (OUTPUT_FLAVOR == bfd_target_elf_flavour)
+ 		      record_alignment (new_seg, 4);
+ 		    else

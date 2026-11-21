@@ -1,0 +1,165 @@
+name: Glover (North America)
+sha1: 270be17b3c8da9b88a7b99c2a545b0bce16837f4
+options:
+  basename: glover
+  target_path: baserom.z64
+  elf_path: build/glover.elf
+  base_path: .
+  platform: n64
+  compiler: KMC
+
+  # asm_path: asm
+  # src_path: src
+  # build_path: build
+  # create_asm_dependencies: True
+
+  ld_script_path: glover.ld
+  ld_dependencies: True
+
+  find_file_boundaries: False
+  generate_asm_macros_files: False
+  named_regs_for_c_funcs: False
+  header_encoding: ASCII
+
+  o_as_suffix: True
+  use_legacy_include_asm: False
+  mips_abi_float_regs: numeric
+
+  asm_function_macro: glabel
+  asm_jtbl_label_macro: jlabel
+  asm_data_macro: dlabel
+
+  section_order: [".text", ".rodata", ".data", ".bss"]
+  auto_link_sections: [".data", ".rodata", ".bss"]
+  subalign: null
+  ld_align_segment_vram_end: False
+  ld_align_section_vram_end: False
+
+  symbol_addrs_path:
+    - symbol_addrs.txt
+  reloc_addrs_path:
+    - reloc_addrs.txt
+
+  undefined_funcs_auto_path: undefined_funcs_auto.txt
+  undefined_syms_auto_path: undefined_syms_auto.txt
+
+  # string_encoding: ASCII
+  # data_string_encoding: ASCII
+  rodata_string_guesser_level: 2
+  data_string_guesser_level: 2
+  # libultra_symbols: True
+  # hardware_regs: True
+  # gfx_ucode: # one of [f3d, f3db, f3dex, f3dexb, f3dex2]
+segments:
+  - name: header
+    type: header
+    start: 0x0
+
+  - name: ipl3
+    type: bin
+    start: 0x40
+
+  # ROM 0x1000 loads at VRAM 0x80100000: VRAM = ROM + 0x800FF000.
+  # BSS is 0x801F5680 - 0x802B0D10 (zeroed at runtime, not in ROM).
+  # main() is at 0x80139DE8.
+
+  - name: entry
+    type: code
+    start: 0x1000
+    vram: 0x80100000
+    subsegments:
+      - [0x1000, asm]
+
+  - name: main
+    type: code
+    start: 0xD920
+    vram: 0x8010C920
+    follows_vram: entry
+    subsegments:
+      - [0xD920, c, D910]
+      - [0xE860, asm, E860]
+      - [0xF0D0, c, D910_F0D0]
+
+  - name: game_start
+    type: code
+    start: 0x18020
+    vram: 0x80117020
+    subsegments:
+      - [0x18020, c]
+
+  # Embedded RSP programs use their own instruction address space, not CPU functions.
+  - name: rspboot
+    type: bin
+    start: 0x1D720
+    vram: 0x8011C720
+
+  - name: game
+    type: code
+    start: 0x1D7F0
+    vram: 0x8011C7F0
+    subsegments:
+      - [0x1D7F0, c, 18020_1D7F0]
+      - [0x2D2B0, c, 18020_2D2B0]
+      - [0x2D5E0, c, 18020_2D5E0]
+      - [0x33940, c, "18020_33940"]
+      - [0x34900, c, "18020_34900"]
+      - [0x34E60, c, 18020_34E60]
+      - [0x376E8, c, 18020_376E8]
+      - [0x3A90C, c, 18020_3A90C]
+      - [0x3AC40, c, 18020_3AC40]
+      - [0x3AD70, c, 18020_3AD70]
+      - [0x435D0, c, 18020_435D0]
+      - [0x46680, c, "18020_46680"]
+      - [0x479E4, c, 18020_479E4]
+      - [0x47B98, c, 18020_47B98]
+      - [0x48000, c, "18020_48000"]
+      - [0x50400, c, "18020_50400"]
+      - [0x56B90, c, 18020_56B90]
+      - [0x80200, c, "18020_80200"]
+      - [0x812E0, c, 18020_812E0]
+
+  - name: rspgfx
+    type: bin
+    start: 0xBD710
+    vram: 0x801BC710
+
+  - name: game_end
+    type: code
+    start: 0xC0800
+    vram: 0x801BF800
+    subsegments:
+      - [0xC0800, c, 18020_C0800]
+      - [0xC5030, asm, C5030]
+      - [0xC5040, c, 18020_C5030]
+      - [0xC72B0, asm, C72B0]
+      - [0xC7520, c, 18020_C7520]
+      - [0xC7620, asm, C7620]
+      - [0xC7D8C, asm, C7D8C]
+      - [0xC7DE4, asm, C7DE4]
+      - [0xC7F60, asm, C7F60]
+      - [0xC7F70, asm, C7F70]
+      - [0xC7FB0, c, 18020_C7FB0]
+      - [0xC8320, asm, C8320]
+      - [0xC8430, c, 18020_C8430]
+      - [0xC8D80, asm, C8D80]
+      - [0xC8D90, c, 18020_C8D90]
+      - [0xC8DF0, asm, C8DF0]
+      - [0xC8EB0, c, 18020_C8EB0]
+      - [0xD2D00, asm, D2D00]
+      - [0xD30C0, c, 18020_D30C0]
+      - [0xD4AA0, c, 18020_D4AA0]
+      - [0xD51D0, data]
+
+  - name: game_bss
+    type: code
+    start: 0xF5680
+    vram: 0x801F5680
+    bss_size: 0xBB690  # 0x802B0D10 - 0x801F5680
+    subsegments:
+      - { start: 0xF5680, type: bss, vram: 0x801F5680 }
+
+  - type: bin
+    start: 0xF5680
+    follows_vram: game_bss
+
+  - [0x800000]

@@ -1,0 +1,24 @@
+/build/
+baserom.z64
+*.z64
+*.n64
+*.v64
+.splat/
+__pycache__/
+*.pyc
+logs/
+*.bak
+.env
+.env.*
+.claude/
+test_ccb0.c.*
+
+# generated from your own ROM by `make extract` / `make expected`; never committed
+/asm/
+/assets/
+/expected/
+/glover.d
+
+permuter_results/
+tools/decomp-permuter/
+tools/.permuter-venv/

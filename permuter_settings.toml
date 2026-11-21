@@ -1,0 +1,4 @@
+compiler_type = "gcc"
+
+[compiler]
+compiler = "gcc"

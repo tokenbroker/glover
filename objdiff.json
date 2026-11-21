@@ -1,0 +1,521 @@
+{
+  "custom_make": "make",
+  "custom_args": [
+    "RUN_CC_CHECK=0"
+  ],
+  "build_target": false,
+  "build_base": true,
+  "watch_patterns": [
+    "src/**/*.c",
+    "include/**/*.h",
+    "asm/**/*.s"
+  ],
+  "units": [
+    {
+      "name": "src/D910",
+      "target_path": "expected/src/D910.o",
+      "base_path": "build/src/D910.o",
+      "metadata": {
+        "source_path": "src/D910.c",
+        "progress_categories": [
+          "game"
+        ]
+      },
+      "scratch": {
+        "platform": "n64",
+        "compiler": "gcc2.7.2",
+        "c_flags": "-G0 -mips3 -mgp32 -mfp32 -O2 -g2"
+      }
+    },
+    {
+      "name": "src/18020",
+      "target_path": "expected/src/18020.o",
+      "base_path": "build/src/18020.o",
+      "metadata": {
+        "source_path": "src/18020.c",
+        "progress_categories": [
+          "game"
+        ]
+      },
+      "scratch": {
+        "platform": "n64",
+        "compiler": "gcc2.7.2",
+        "c_flags": "-G0 -mips3 -mgp32 -mfp32 -O2 -g2"
+      }
+    },
+    {
+      "name": "src/18020_1D7F0",
+      "target_path": "expected/src/18020_1D7F0.o",
+      "base_path": "build/src/18020_1D7F0.o",
+      "metadata": {
+        "source_path": "src/18020_1D7F0.c",
+        "progress_categories": [
+          "game"
+        ]
+      },
+      "scratch": {
+        "platform": "n64",
+        "compiler": "gcc2.7.2",
+        "c_flags": "-G0 -mips3 -mgp32 -mfp32 -O2 -g2"
+      }
+    },
+    {
+      "name": "src/18020_C0800",
+      "target_path": "expected/src/18020_C0800.o",
+      "base_path": "build/src/18020_C0800.o",
+      "metadata": {
+        "source_path": "src/18020_C0800.c",
+        "progress_categories": [
+          "game"
+        ]
+      },
+      "scratch": {
+        "platform": "n64",
+        "compiler": "gcc2.7.2",
+        "c_flags": "-G0 -mips3 -mgp32 -mfp32 -O2 -g2"
+      }
+    },
+    {
+      "name": "src/18020_C5030",
+      "target_path": "expected/src/18020_C5030.o",
+      "base_path": "build/src/18020_C5030.o",
+      "metadata": {
+        "source_path": "src/18020_C5030.c",
+        "progress_categories": [
+          "game"
+        ]
+      },
+      "scratch": {
+        "platform": "n64",
+        "compiler": "gcc2.7.2",
+        "c_flags": "-G0 -mips3 -mgp32 -mfp32 -O2 -Wa,--fp-move-nops"
+      }
+    },
+    {
+      "name": "src/18020_2D2B0",
+      "target_path": "expected/src/18020_2D2B0.o",
+      "base_path": "build/src/18020_2D2B0.o",
+      "metadata": {
+        "source_path": "src/18020_2D2B0.c",
+        "progress_categories": [
+          "game"
+        ]
+      },
+      "scratch": {
+        "platform": "n64",
+        "compiler": "gcc2.7.2",
+        "c_flags": "-G0 -mips3 -mgp32 -mfp32 -O0 -g2"
+      }
+    },
+    {
+      "name": "src/18020_2D5E0",
+      "target_path": "expected/src/18020_2D5E0.o",
+      "base_path": "build/src/18020_2D5E0.o",
+      "metadata": {
+        "source_path": "src/18020_2D5E0.c",
+        "progress_categories": [
+          "game"
+        ]
+      },
+      "scratch": {
+        "platform": "n64",
+        "compiler": "gcc2.7.2",
+        "c_flags": "-G0 -mips3 -mgp32 -mfp32 -O2 -g2"
+      }
+    },
+    {
+      "name": "src/18020_33940",
+      "target_path": "expected/src/18020_33940.o",
+      "base_path": "build/src/18020_33940.o",
+      "metadata": {
+        "source_path": "src/18020_33940.c",
+        "progress_categories": [
+          "game"
+        ]
+      },
+      "scratch": {
+        "platform": "n64",
+        "compiler": "gcc2.7.2",
+        "c_flags": "-G0 -mips3 -mgp32 -mfp32 -O0 -g2"
+      }
+    },
+    {
+      "name": "src/18020_34900",
+      "target_path": "expected/src/18020_34900.o",
+      "base_path": "build/src/18020_34900.o",
+      "metadata": {
+        "source_path": "src/18020_34900.c",
+        "progress_categories": [
+          "game"
+        ]
+      },
+      "scratch": {
+        "platform": "n64",
+        "compiler": "gcc2.7.2",
+        "c_flags": "-G0 -mips3 -mgp32 -mfp32 -O2 -g2"
+      }
+    },
+    {
+      "name": "src/18020_34E60",
+      "target_path": "expected/src/18020_34E60.o",
+      "base_path": "build/src/18020_34E60.o",
+      "metadata": {
+        "source_path": "src/18020_34E60.c",
+        "progress_categories": [
+          "game"
+        ]
+      },
+      "scratch": {
+        "platform": "n64",
+        "compiler": "gcc2.7.2",
+        "c_flags": "-G0 -mips3 -mgp32 -mfp32 -O0 -g2"
+      }
+    },
+    {
+      "name": "src/18020_376E8",
+      "target_path": "expected/src/18020_376E8.o",
+      "base_path": "build/src/18020_376E8.o",
+      "metadata": {
+        "source_path": "src/18020_376E8.c",
+        "progress_categories": [
+          "game"
+        ]
+      },
+      "scratch": {
+        "platform": "n64",
+        "compiler": "gcc2.7.2",
+        "c_flags": "-G0 -mips3 -mgp32 -mfp32 -O2 -g2"
+      }
+    },
+    {
+      "name": "src/18020_3A90C",
+      "target_path": "expected/src/18020_3A90C.o",
+      "base_path": "build/src/18020_3A90C.o",
+      "metadata": {
+        "source_path": "src/18020_3A90C.c",
+        "progress_categories": [
+          "game"
+        ]
+      },
+      "scratch": {
+        "platform": "n64",
+        "compiler": "gcc2.7.2",
+        "c_flags": "-G0 -mips3 -mgp32 -mfp32 -O0 -g2"
+      }
+    },
+    {
+      "name": "src/18020_3AC40",
+      "target_path": "expected/src/18020_3AC40.o",
+      "base_path": "build/src/18020_3AC40.o",
+      "metadata": {
+        "source_path": "src/18020_3AC40.c",
+        "progress_categories": [
+          "game"
+        ]
+      },
+      "scratch": {
+        "platform": "n64",
+        "compiler": "gcc2.7.2",
+        "c_flags": "-G0 -mips3 -mgp32 -mfp32 -O2 -g2"
+      }
+    },
+    {
+      "name": "src/18020_3AD70",
+      "target_path": "expected/src/18020_3AD70.o",
+      "base_path": "build/src/18020_3AD70.o",
+      "metadata": {
+        "source_path": "src/18020_3AD70.c",
+        "progress_categories": [
+          "game"
+        ]
+      },
+      "scratch": {
+        "platform": "n64",
+        "compiler": "gcc2.7.2",
+        "c_flags": "-G0 -mips3 -mgp32 -mfp32 -O0 -g2"
+      }
+    },
+    {
+      "name": "src/18020_435D0",
+      "target_path": "expected/src/18020_435D0.o",
+      "base_path": "build/src/18020_435D0.o",
+      "metadata": {
+        "source_path": "src/18020_435D0.c",
+        "progress_categories": [
+          "game"
+        ]
+      },
+      "scratch": {
+        "platform": "n64",
+        "compiler": "gcc2.7.2",
+        "c_flags": "-G0 -mips3 -mgp32 -mfp32 -O2 -g2"
+      }
+    },
+    {
+      "name": "src/18020_46680",
+      "target_path": "expected/src/18020_46680.o",
+      "base_path": "build/src/18020_46680.o",
+      "metadata": {
+        "source_path": "src/18020_46680.c",
+        "progress_categories": [
+          "game"
+        ]
+      },
+      "scratch": {
+        "platform": "n64",
+        "compiler": "gcc2.7.2",
+        "c_flags": "-G0 -mips3 -mgp32 -mfp32 -O0 -g2"
+      }
+    },
+    {
+      "name": "src/18020_479E4",
+      "target_path": "expected/src/18020_479E4.o",
+      "base_path": "build/src/18020_479E4.o",
+      "metadata": {
+        "source_path": "src/18020_479E4.c",
+        "progress_categories": [
+          "game"
+        ]
+      },
+      "scratch": {
+        "platform": "n64",
+        "compiler": "gcc2.7.2",
+        "c_flags": "-G0 -mips3 -mgp32 -mfp32 -O2 -g2"
+      }
+    },
+    {
+      "name": "src/18020_47B98",
+      "target_path": "expected/src/18020_47B98.o",
+      "base_path": "build/src/18020_47B98.o",
+      "metadata": {
+        "source_path": "src/18020_47B98.c",
+        "progress_categories": [
+          "game"
+        ]
+      },
+      "scratch": {
+        "platform": "n64",
+        "compiler": "gcc2.7.2",
+        "c_flags": "-G0 -mips3 -mgp32 -mfp32 -O0 -g2"
+      }
+    },
+    {
+      "name": "src/18020_48000",
+      "target_path": "expected/src/18020_48000.o",
+      "base_path": "build/src/18020_48000.o",
+      "metadata": {
+        "source_path": "src/18020_48000.c",
+        "progress_categories": [
+          "game"
+        ]
+      },
+      "scratch": {
+        "platform": "n64",
+        "compiler": "gcc2.7.2",
+        "c_flags": "-G0 -mips3 -mgp32 -mfp32 -O2 -g2"
+      }
+    },
+    {
+      "name": "src/18020_50400",
+      "target_path": "expected/src/18020_50400.o",
+      "base_path": "build/src/18020_50400.o",
+      "metadata": {
+        "source_path": "src/18020_50400.c",
+        "progress_categories": [
+          "game"
+        ]
+      },
+      "scratch": {
+        "platform": "n64",
+        "compiler": "gcc2.7.2",
+        "c_flags": "-G0 -mips3 -mgp32 -mfp32 -O0 -g2"
+      }
+    },
+    {
+      "name": "src/18020_56B90",
+      "target_path": "expected/src/18020_56B90.o",
+      "base_path": "build/src/18020_56B90.o",
+      "metadata": {
+        "source_path": "src/18020_56B90.c",
+        "progress_categories": [
+          "game"
+        ]
+      },
+      "scratch": {
+        "platform": "n64",
+        "compiler": "gcc2.7.2",
+        "c_flags": "-G0 -mips3 -mgp32 -mfp32 -O2 -g2"
+      }
+    },
+    {
+      "name": "src/18020_80200",
+      "target_path": "expected/src/18020_80200.o",
+      "base_path": "build/src/18020_80200.o",
+      "metadata": {
+        "source_path": "src/18020_80200.c",
+        "progress_categories": [
+          "game"
+        ]
+      },
+      "scratch": {
+        "platform": "n64",
+        "compiler": "gcc2.7.2",
+        "c_flags": "-G0 -mips3 -mgp32 -mfp32 -O0 -g2"
+      }
+    },
+    {
+      "name": "src/18020_812E0",
+      "target_path": "expected/src/18020_812E0.o",
+      "base_path": "build/src/18020_812E0.o",
+      "metadata": {
+        "source_path": "src/18020_812E0.c",
+        "progress_categories": [
+          "game"
+        ]
+      },
+      "scratch": {
+        "platform": "n64",
+        "compiler": "gcc2.7.2",
+        "c_flags": "-G0 -mips3 -mgp32 -mfp32 -O2 -g2"
+      }
+    },
+    {
+      "name": "src/18020_D4AA0",
+      "target_path": "expected/src/18020_D4AA0.o",
+      "base_path": "build/src/18020_D4AA0.o",
+      "metadata": {
+        "source_path": "src/18020_D4AA0.c",
+        "progress_categories": [
+          "game"
+        ]
+      },
+      "scratch": {
+        "platform": "n64",
+        "compiler": "gcc2.7.2",
+        "c_flags": "-G0 -mips3 -mgp32 -mfp32 -O2 -g2"
+      }
+    },
+    {
+      "name": "src/D910_F0D0",
+      "target_path": "expected/src/D910_F0D0.o",
+      "base_path": "build/src/D910_F0D0.o",
+      "metadata": {
+        "source_path": "src/D910_F0D0.c",
+        "progress_categories": [
+          "game"
+        ]
+      },
+      "scratch": {
+        "platform": "n64",
+        "compiler": "gcc2.7.2",
+        "c_flags": "-G0 -mips3 -mgp32 -mfp32 -O2 -g2"
+      }
+    },
+    {
+      "name": "src/18020_C7520",
+      "target_path": "expected/src/18020_C7520.o",
+      "base_path": "build/src/18020_C7520.o",
+      "metadata": {
+        "source_path": "src/18020_C7520.c",
+        "progress_categories": [
+          "game"
+        ]
+      },
+      "scratch": {
+        "platform": "n64",
+        "compiler": "gcc2.7.2",
+        "c_flags": "-G0 -mips3 -mgp32 -mfp32 -O2 -Wa,--fp-move-nops"
+      }
+    },
+    {
+      "name": "src/18020_C7FB0",
+      "target_path": "expected/src/18020_C7FB0.o",
+      "base_path": "build/src/18020_C7FB0.o",
+      "metadata": {
+        "source_path": "src/18020_C7FB0.c",
+        "progress_categories": [
+          "game"
+        ]
+      },
+      "scratch": {
+        "platform": "n64",
+        "compiler": "gcc2.7.2",
+        "c_flags": "-G0 -mips3 -mgp32 -mfp32 -O2 -Wa,--fp-move-nops"
+      }
+    },
+    {
+      "name": "src/18020_C8430",
+      "target_path": "expected/src/18020_C8430.o",
+      "base_path": "build/src/18020_C8430.o",
+      "metadata": {
+        "source_path": "src/18020_C8430.c",
+        "progress_categories": [
+          "game"
+        ]
+      },
+      "scratch": {
+        "platform": "n64",
+        "compiler": "gcc2.7.2",
+        "c_flags": "-G0 -mips3 -mgp32 -mfp32 -O2 -Wa,--fp-move-nops"
+      }
+    },
+    {
+      "name": "src/18020_C8D90",
+      "target_path": "expected/src/18020_C8D90.o",
+      "base_path": "build/src/18020_C8D90.o",
+      "metadata": {
+        "source_path": "src/18020_C8D90.c",
+        "progress_categories": [
+          "game"
+        ]
+      },
+      "scratch": {
+        "platform": "n64",
+        "compiler": "gcc2.7.2",
+        "c_flags": "-G0 -mips3 -mgp32 -mfp32 -O2 -Wa,--fp-move-nops"
+      }
+    },
+    {
+      "name": "src/18020_C8EB0",
+      "target_path": "expected/src/18020_C8EB0.o",
+      "base_path": "build/src/18020_C8EB0.o",
+      "metadata": {
+        "source_path": "src/18020_C8EB0.c",
+        "progress_categories": [
+          "game"
+        ]
+      },
+      "scratch": {
+        "platform": "n64",
+        "compiler": "gcc2.7.2",
+        "c_flags": "-G0 -mips3 -mgp32 -mfp32 -O2 -Wa,--fp-move-nops"
+      }
+    },
+    {
+      "name": "src/18020_D30C0",
+      "target_path": "expected/src/18020_D30C0.o",
+      "base_path": "build/src/18020_D30C0.o",
+      "metadata": {
+        "source_path": "src/18020_D30C0.c",
+        "progress_categories": [
+          "game"
+        ]
+      },
+      "scratch": {
+        "platform": "n64",
+        "compiler": "gcc2.7.2",
+        "c_flags": "-G0 -mips3 -mgp32 -mfp32 -O2 -Wa,--fp-move-nops"
+      }
+    }
+  ],
+  "progress_categories": [
+    {
+      "id": "boot",
+      "name": "Boot"
+    },
+    {
+      "id": "game",
+      "name": "Game"
+    }
+  ]
+}

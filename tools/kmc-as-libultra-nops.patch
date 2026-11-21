@@ -1,0 +1,101 @@
+Applies on top of tools/kmc-as-lw-dest-temp.patch (decompals/mips-binutils-2.6 + tools/no-float-doubleword.patch +
+tools/kmc-as-fixes.patch). Two nop rules of the assembler that built the ROM's libultra objects, both only under
+--fp-move-nops (the libultra pieces src/18020_C5030.c .. src/18020_D30C0.c; every game unit assembles byte-identical):
+
+  1. Two hazard nops between an FP compare and the filled branch right after it. GCC writes the compare, then
+     `.set noreorder; bc1f L; <slot>`; the game units' assembler pads one nop (kmc_cc_pending, at the branch), the
+     libultra assembler padded two: `c.le.d; nop; nop; bc1tl; sub.d` (25 sites in the ROM, never one). That is
+     stock gas's nop at the `.set noreorder` (mips_emit_delays, which tools/kmc-as-fixes.patch switched off for the
+     game units) on top of the KMC one. A compare two instructions back keeps its single nop (`c.le.d; addiu; nop;
+     bc1t`, 11 sites), and the reorder-mode unfilled branch keeps its single nop (`c.lt.s; nop; bc1t; nop`, 18
+     sites). Counted 2026-11-06 with `objdump -d -z` (without -z objdump folds two nops into `...`, which is how
+     a first version of this patch misread the ROM as having none). tc-mips.c mips_emit_delays.
+
+  2. The VR4300 mulmul text fix treats a line that starts in column 0 as a float multiply: a label line or an
+     empty line (gas/input-file.c, `local_28 == cur_insn`, which the fixes patch removed for the game units). So a
+     mul or dmul of any width right after a label, or right after the empty line GCC leaves behind every `.set
+     reorder`, gets a nop in front of it: `.L28: nop; mul.d`, `.L509: nop; mult t2,t6`, `bnez; cvt.d.s; nop;
+     mul.d` (13 sites in the ROM: 12 at branch targets, 1 after a filled slot; none without the nop).
+
+The library functions that AGENTS.md listed as "one nop short, not the C" are these two rules:
+func_801C4040, func_801C48A0, func_801C5810, func_801C59C0, func_801C9C20, func_801C9D24, func_801CAFC8,
+func_801CC050, func_801CE300, func_801CF0C0, func_801D3020 (rule 1), func_801C6000, func_801C7EB0, func_801C7F54,
+func_801CA844, func_801CC118 (rule 2; func_801CC118 also has a real code difference at +0x760). func_801C7110 is
+relocation annotations (D_80000004/08/0C), func_801C4030 is `jr ra; sqrt.s` in the slot, hand-written: neither is
+this patch.
+
+Re-apply with: git apply --ignore-whitespace tools/kmc-as-libultra-nops.patch (after the three above).
+Build and verify: tools/kmc-as-build.sh (configure + make as in tools/kmc-as-fixes.patch, then
+tools/fable/as_verify.py old new: objdiff-cli judges every unit against expected/, game units must be identical).
+
+diff --git a/gas/config/tc-mips.c b/gas/config/tc-mips.c
+index 2be18ed..cf2c7d4 100644
+--- a/gas/config/tc-mips.c
++++ b/gas/config/tc-mips.c
+@@ -1950,15 +1950,25 @@ mips_emit_delays ()
+   if (! mips_noreorder)
+     {
+       int nop;
++      int cc;
+ 
+       nop = 0;
+       /* KMC: when something other than an instruction follows, the ROM
+ 	 shows one nop after an FP compare and none after mfc1/cfc1
+-	 (the VR4300 interlocks the latter).  */
+-      if (mips_isa < 4
+-	  && (prev_insn.insn_mo->pinfo & INSN_WRITE_COND_CODE))
+-	kmc_cc_pending = 1;
+-      if ((0
++	 (the VR4300 interlocks the latter).  kmc_cc_pending is set at the
++	 end of this block: the nop emitted below passes through
++	 append_insn, which would clear it.  */
++      cc = (mips_isa < 4
++	    && (prev_insn.insn_mo->pinfo & INSN_WRITE_COND_CODE));
++      /* KMC: the libultra objects (--fp-move-nops) have two nops between an
++	 FP compare and the filled branch after it: `c.le.d; nop; nop; bc1tl;
++	 slot' (25 sites in src/18020_C5030.c and its pieces, never one).  This
++	 is stock gas's nop at the `.set noreorder' on top of the KMC nop at
++	 the branch (kmc_cc_pending); the game units have only the latter, so
++	 stock gas's stays off for them.  A compare two instructions back
++	 keeps the single nop (`c.le.d; addiu; nop; bc1t', 11 sites, the
++	 FP_ISA < 2 rule below).  */
++      if ((kmc_fp_nops
+ 	   && (prev_insn.insn_mo->pinfo & INSN_WRITE_COND_CODE))
+ 	  || (FP_ISA < 2
+ 	      && (prev_insn.insn_mo->pinfo
+@@ -1999,6 +2009,8 @@ mips_emit_delays ()
+ 	      S_SET_VALUE (insn_label, (valueT) frag_now_fix ());
+ 	    }
+ 	}
++      if (cc)
++	kmc_cc_pending = 1;
+     }
+ 
+   mips_no_prev_insn ();
+diff --git a/gas/input-file.c b/gas/input-file.c
+index e4efe80..afb13f8 100644
+--- a/gas/input-file.c
++++ b/gas/input-file.c
+@@ -127,6 +127,7 @@ input_file_pop (arg)
+ }
+ 
+ int vr4300mul_enabled = -1;
++extern int kmc_fp_nops;
+ int no_float_doubleword = 0;
+ 
+ // Mimic KMC as mulmul fix functionality
+@@ -238,8 +239,12 @@ char* read_asm(const char *pathname, size_t* output_size) {
+                         if (prev_insn_was_float_mul == 0)
+                         {
+                             /* KMC: a line that starts in column 0 (a label) is not a float
+-                               multiply; the ROM pads only mul.s/mul.d followed by mul*.  */
+-                            if (
++                               multiply; the ROM pads only mul.s/mul.d followed by mul*.
++                               Except for the libultra objects (--fp-move-nops): their
++                               assembler kept the quirk, so a mul or dmul (any width) right after a label
++                               has a nop in front of it (`.L: nop; mul.d', `.L: nop; mult',
++                               13 sites in src/18020_C5030.c and its pieces, never without).  */
++                            if ((kmc_fp_nops && local_28 == cur_insn) ||
+                                 (((cur_insn_first_char == 'm' && (cur_insn[1] == 'u')) &&
+                                     (((cur_insn[2] == 'l' && (cur_insn[3] == '.')) &&
+                                     ((cur_insn[4] == 's' || (cur_insn[4] == 'd'))))))))

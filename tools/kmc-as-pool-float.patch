@@ -1,0 +1,164 @@
+Applies on top of tools/kmc-as-hilo-libultra.patch (independent of it: also applies straight after
+tools/kmc-as-libultra-nops.patch). Game units only.
+
+`li.s $fN,c` with c != 0 becomes a load from a pool entry the assembler adds to .rodata:
+    lui $at,%hi(pool); lwc1 $fN,%lo(pool)($at)
+instead of stock gas's -G0 form `lui $at,c>>16; [ori $at,$at,c&0xffff;] mtc1 $at,$fN`. On by default when
+--no-float-doubleword is given (all 23 game units, none of the library units); `--pool-float-literals` /
+`--no-pool-float-literals` force it either way, so no Makefile change is needed.
+
+ROM evidence (expected/ objects of the 23 game units, pool values read from baserom.z64):
+  - 0 sites of `lui $at,imm; mtc1 $at,$fN` (or lui/ori/mtc1). Every mtc1 in the game code moves $zero (539) or an
+    integer that is then converted (cvt.s.w), or a float GCC itself kept in an integer register
+    (func_801A6170 `lui s1,0x40e0 ... mtc1 s1,$f4`; func_801A44F8/func_801AEE04 `lui v0,0x8000` are sign-bit masks).
+  - 3751 single `lui $at; lwc1 $fN,%lo(D_8010xxxx)($at)` loads from the game rodata, 2702 of them of a value whose
+    low 16 bits are zero (which stock gas would have built with lui/mtc1): 1.0f 420 loads from 391 different
+    addresses, 2.0f 175/151, 10.0f 115/99 ... one pool entry per use, never shared: an assembler pool, not GCC's.
+  - The library objects do have the immediate form (45 lui/mtc1 + 3 lui/ori/mtc1) and keep it: they do not pass
+    --no-float-doubleword.
+0.0 never reaches the assembler as li.s (GCC writes `mtc1 $0,$fN`, and `mtc1 $0,$fN; mtc1 $0,$fN+1` for a double);
+a hand-written `li.s $fN,0` keeps the immediate form. `li.s $rN,c` into an integer register (float arguments in
+$a1-$a3, 285 uses in the current game units) is untouched.
+
+Section: .rodata (the section stock gas already uses for `li.d` at -G0), aligned to 4, one entry per li.s in source
+order, no merging. .lit4 would need $gp (`lwc1 $fN,%gp_rel(pool)($gp)`, one instruction) and is what -G0 rules out;
+.rodata through $at gives the ROM's two instructions.
+
+Verified 2026-11-20 with the as_verify method: no function lost, no library object changed, 21 of 23 game objects
+byte-identical; the two that change hold unmatched drafts that use float literals (func_80120D18 99.44 -> 99.49,
+func_80112F80 99.07 -> 99.80).
+
+Re-apply with: git apply --ignore-whitespace tools/kmc-as-pool-float.patch
+
+diff --git a/gas/as.c b/gas/as.c
+index 5f6cba7..9e3d83e 100644
+--- a/gas/as.c
++++ b/gas/as.c
+@@ -118,6 +118,8 @@ Options:\n\
+ -N, --force-n64align          enable special alignment for Nintendo 64\n\
+ --no-float-doubleword	expand l.d/s.d to lwc1/swc1 pairs (never ldc1/sdc1)\n\
+ --lw-dest-temp		expand lw rd,sym(idx) through rd, as upstream gas does (libultra objects)\n\
++--pool-float-literals	li.s $fN,c loads c from .rodata through $at (default with --no-float-doubleword)\n\
++--no-pool-float-literals	li.s $fN,c is lui/mtc1 through $at (default otherwise)\n\
+ -W			suppress warnings\n\
+ -w			ignored\n\
+ -X			ignored\n\
+@@ -226,6 +228,7 @@ extern int force_n64align_enabled;
+ extern int no_float_doubleword;
+ extern int kmc_fp_nops;
+ extern int kmc_at_index;
++extern int kmc_pool_floats;
+ 
+ void
+ parse_args (pargc, pargv)
+@@ -271,6 +274,10 @@ parse_args (pargc, pargv)
+     {"fp-move-nops", no_argument, NULL, 'P'},
+ #define OPTION_LW_DEST_TEMP (OPTION_STD_BASE + 20)
+     {"lw-dest-temp", no_argument, NULL, OPTION_LW_DEST_TEMP},
++#define OPTION_POOL_FLOATS (OPTION_STD_BASE + 21)
++    {"pool-float-literals", no_argument, NULL, OPTION_POOL_FLOATS},
++#define OPTION_NO_POOL_FLOATS (OPTION_STD_BASE + 22)
++    {"no-pool-float-literals", no_argument, NULL, OPTION_NO_POOL_FLOATS},
+ #define OPTION_NOCPP (OPTION_STD_BASE + 1)
+     {"nocpp", no_argument, NULL, OPTION_NOCPP},
+ #define OPTION_STATISTICS (OPTION_STD_BASE + 2)
+@@ -522,6 +529,14 @@ parse_args (pargc, pargv)
+ 	  kmc_at_index = 0;
+ 	  break;
+ 
++	case OPTION_POOL_FLOATS:
++	  kmc_pool_floats = 1;
++	  break;
++
++	case OPTION_NO_POOL_FLOATS:
++	  kmc_pool_floats = 0;
++	  break;
++
+ 	case 'w':
+ 	  break;
+ 
+diff --git a/gas/config/tc-mips.c b/gas/config/tc-mips.c
+index 80013fa..bd194e5 100644
+--- a/gas/config/tc-mips.c
++++ b/gas/config/tc-mips.c
+@@ -522,6 +522,18 @@ int kmc_fp_nops = 0;
+    $at (the game units); the ROM's libultra objects were assembled by an
+    upstream-style gas that reuses rd (--lw-dest-temp clears this).  */
+ int kmc_at_index = 1;
++/* KMC: the game objects never build a float literal in $at: `li.s $fN,c'
++   with c != 0 is a load from a pool in .rodata, `lui $at,%hi(pool); lwc1
++   $fN,%lo(pool)($at)' (2702 pool loads in the ROM's game code whose value
++   has a zero low half, 1.0 alone at 391 different addresses, and not one
++   `lui $at; mtc1 $at,$fN'), where stock gas with -G0 makes `lui $at,c >> 16;
++   mtc1 $at,$fN' (and `lui; ori; mtc1').  The libultra objects do have the
++   lui/mtc1 form (45 + 3 sites) and keep it.  -1 follows
++   --no-float-doubleword, which only the game units pass;
++   --pool-float-literals / --no-pool-float-literals set it.  */
++int kmc_pool_floats = -1;
++#define KMC_POOL_FLOATS \
++  (kmc_pool_floats < 0 ? no_float_doubleword : kmc_pool_floats)
+ /* KMC: the ROM's assembler never leaves a float multiply in a branch delay
+    slot: it moves the multiply in front of the branch and puts a nop in the
+    slot (45 slots in our build, 0 in the ROM).  Not for the libultra unit
+@@ -3915,6 +3927,21 @@ macro (ip)
+ 	}
+       else
+ 	{
++	  /* KMC: a pooled float literal (see kmc_pool_floats).  */
++	  if (offset_expr.X_op == O_symbol
++	      && offset_expr.X_add_number == 0
++	      && strcmp (segment_name (S_GET_SEGMENT
++				       (offset_expr.X_add_symbol)),
++			 RDATA_SECTION_NAME) == 0)
++	    {
++	      macro_build_lui ((char *) NULL, &icnt, &offset_expr, AT);
++	      macro_build ((char *) NULL, &icnt, &offset_expr, "lwc1",
++			   "T,o(b)", treg, (int) BFD_RELOC_LO16, AT);
++	      /* As for li.d: this must not become a variant frag.  */
++	      frag_wane (frag_now);
++	      frag_new (0);
++	      break;
++	    }
+ 	  assert (offset_expr.X_op == O_symbol
+ 		  && strcmp (segment_name (S_GET_SEGMENT
+ 					   (offset_expr.X_add_symbol)),
+@@ -5474,6 +5501,7 @@ mips_ip (str, ip)
+ 	    case 'l':
+ 	      {
+ 		int f64;
++		int kmc_pool;
+ 		char *save_in;
+ 		char *err;
+ 		unsigned char temp[8];
+@@ -5526,8 +5554,17 @@ mips_ip (str, ip)
+ 
+ 		assert (length == (f64 ? 8 : 4));
+ 
++		/* KMC: li.s $fN,c with c != 0 goes to the pool in .rodata
++		   (see kmc_pool_floats); 0.0 never gets here from GCC
++		   (it writes mtc1 $0) and keeps the immediate form.  */
++		kmc_pool = (*args == 'l'
++			    && KMC_POOL_FLOATS
++			    && mips_pic == NO_PIC
++			    && (temp[0] | temp[1] | temp[2] | temp[3]) != 0);
++
+ 		if (*args == 'f'
+ 		    || (*args == 'l'
++			&& ! kmc_pool
+ 			&& (! USE_GLOBAL_POINTER_OPT
+ 			    || mips_pic == EMBEDDED_PIC
+ 			    || g_switch_value < 4)
+@@ -5567,6 +5604,13 @@ mips_ip (str, ip)
+ 			newname = RDATA_SECTION_NAME;
+ 			break;
+ 		      case 'l':
++			if (kmc_pool
++			    && (! USE_GLOBAL_POINTER_OPT
++				|| g_switch_value < 4))
++			  {
++			    newname = RDATA_SECTION_NAME;
++			    break;
++			  }
+ 			assert (!USE_GLOBAL_POINTER_OPT
+ 				|| g_switch_value >= 4);
+ 			newname = ".lit4";

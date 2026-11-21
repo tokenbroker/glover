@@ -1,0 +1,65 @@
+Applies on top of tools/kmc-as-libultra-nops.patch (decompals/mips-binutils-2.6 at 54514de + no-float-doubleword,
+kmc-as-fixes, kmc-as-lw-dest-temp, kmc-as-libultra-nops). Library units only (--fp-move-nops); every game unit
+assembles byte-identical.
+
+The libultra assembler kept stock gas's HI/LO flush at the `.set noreorder` GCC writes in front of a filled branch:
+an mfhi/mflo directly before the directive gets two nops (`mflo v0; nop; nop; j L; andi`), which
+tools/kmc-as-fixes.patch switched off for the game units (backlog item 7: the game ROM never has them). ROM evidence,
+`objdump -d -z` over the seven library objects in expected/: 49 mfhi/mflo sites; the 7 `mflo; nop; nop; j` sites are
+the SPR_DXT divides of func_801CC118 (src/18020_C8EB0.c) and were the only 7 sites where our build differed; the
+other 42 are followed by ordinary instructions or by a reorder-mode branch (`mflo; bgez; nop`, `mflo; jr; nop`: no
+`.set noreorder` in between, so no flush) and were already right. Stock gas would also emit ONE nop when the
+mfhi/mflo is two instructions before the directive (`mflo; insn; nop; <filled branch>`): the library targets have no
+such site for or against (`mflo; addiu; slti; beqzl` is three back and has none), so that case is stock behaviour,
+unverified.
+
+Verified 2026-11-20 (as_verify method, objdiff-cli per function, old = the four-patch assembler): 1181 -> 1182
+matched, func_801CC118 98.8 -> 100, nothing lost or moved, 6 of 7 library objects and all 23 game objects
+byte-identical.
+
+Re-apply with: git apply --ignore-whitespace tools/kmc-as-hilo-libultra.patch (after the four above).
+
+diff --git a/gas/config/tc-mips.c b/gas/config/tc-mips.c
+index cf2c7d4..80013fa 100644
+--- a/gas/config/tc-mips.c
++++ b/gas/config/tc-mips.c
+@@ -533,6 +533,12 @@ static int kmc_unfill_fmul = 1;
+    assembler did not pad a HI/LO read there (the padding before a div/mult
+    macro stays).  */
+ static int mips_set_noreorder_pending = 0;
++
++/* KMC: the libultra objects (--fp-move-nops) keep stock gas's HI/LO flush
++   at the `.set noreorder' of a filled branch: `mflo v0; nop; nop; j L; andi'
++   (7 sites in func_801CC118, src/18020_C8EB0.c; no mfhi/mflo directly in
++   front of a filled branch without them).  The game units never have it.  */
++#define KMC_HILO_AT_NOREORDER (kmc_fp_nops || ! mips_set_noreorder_pending)
+ /* KMC: an FP compare followed by a label or directive is padded only if the
+    next instruction reads the condition code (`c.eq.s; j' has no nop in the
+    ROM, `c.lt.s; .L: bc1t' has one, after the label).  */
+@@ -1973,7 +1979,7 @@ mips_emit_delays ()
+ 	  || (FP_ISA < 2
+ 	      && (prev_insn.insn_mo->pinfo
+ 		  & (INSN_LOAD_COPROC_DELAY | INSN_COPROC_MOVE_DELAY)))
+-	  || ((! interlocks && ! mips_set_noreorder_pending)
++	  || ((! interlocks && KMC_HILO_AT_NOREORDER)
+ 	      && (prev_insn.insn_mo->pinfo
+ 		  & (INSN_READ_LO
+ 		     | INSN_READ_HI)))
+@@ -1983,7 +1989,7 @@ mips_emit_delays ()
+ 		     | INSN_COPROC_MEMORY_DELAY))))
+ 	{
+ 	  nop = 1;
+-	  if ((! interlocks && ! mips_set_noreorder_pending)
++	  if ((! interlocks && KMC_HILO_AT_NOREORDER)
+ 	      && ((prev_insn.insn_mo->pinfo & INSN_READ_HI)
+ 		  || (prev_insn.insn_mo->pinfo & INSN_READ_LO)))
+ 	    emit_nop ();
+@@ -1994,7 +2000,7 @@ mips_emit_delays ()
+ 	 for MIPS I only.  */
+       else if ((FP_ISA < 2
+ 		&& (prev_prev_insn.insn_mo->pinfo & INSN_WRITE_COND_CODE))
+-	       || ((! interlocks && ! mips_set_noreorder_pending)
++	       || ((! interlocks && KMC_HILO_AT_NOREORDER)
+ 		   && ((prev_prev_insn.insn_mo->pinfo & INSN_READ_HI)
+ 		       || (prev_prev_insn.insn_mo->pinfo & INSN_READ_LO))))
+ 	nop = 1;

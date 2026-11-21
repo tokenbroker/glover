@@ -1,0 +1,67 @@
+Applies on top of tools/kmc-as-fixes.patch (decompals/mips-binutils-2.6 + tools/no-float-doubleword.patch).
+Adds --lw-dest-temp: with a base register, `lw rd, sym(idx)` expands through rd (`lui rd; addu rd,rd,idx;
+lw rd,%lo(sym)(rd)`) the way upstream gas does, instead of KMC's `$at` form. The ROM's game units were assembled
+by KMC's assembler (only the $at form, 400+ sites), its libultra objects by an upstream-style gas (3 rd-form
+loads in src/18020_C8EB0.c, $at only where rd == idx or for coprocessor loads, which upstream also does), so the
+Makefile passes the option for the libultra pieces only. 2026-10-31: 3 matched, 0 lost, every other unit
+byte-identical.
+--- a/gas/as.c
++++ b/gas/as.c
+@@ -117,6 +117,7 @@
+ -V, --vr4300mul-off	turn off vr4300 mulmul fix\n\
+ -N, --force-n64align          enable special alignment for Nintendo 64\n\
+ --no-float-doubleword	expand l.d/s.d to lwc1/swc1 pairs (never ldc1/sdc1)\n\
++--lw-dest-temp		expand lw rd,sym(idx) through rd, as upstream gas does (libultra objects)\n\
+ -W			suppress warnings\n\
+ -w			ignored\n\
+ -X			ignored\n\
+@@ -224,6 +225,7 @@
+ extern int force_n64align_enabled;
+ extern int no_float_doubleword;
+ extern int kmc_fp_nops;
++extern int kmc_at_index;
+ 
+ void
+ parse_args (pargc, pargv)
+@@ -267,6 +269,8 @@
+     {"force-n64align", no_argument, NULL, 'N'},
+     {"no-float-doubleword", no_argument, NULL, 'F'},
+     {"fp-move-nops", no_argument, NULL, 'P'},
++#define OPTION_LW_DEST_TEMP (OPTION_STD_BASE + 20)
++    {"lw-dest-temp", no_argument, NULL, OPTION_LW_DEST_TEMP},
+ #define OPTION_NOCPP (OPTION_STD_BASE + 1)
+     {"nocpp", no_argument, NULL, OPTION_NOCPP},
+ #define OPTION_STATISTICS (OPTION_STD_BASE + 2)
+@@ -514,6 +518,10 @@
+ 	  kmc_fp_nops = 1;
+ 	  break;
+ 
++	case OPTION_LW_DEST_TEMP:
++	  kmc_at_index = 0;
++	  break;
++
+ 	case 'w':
+ 	  break;
+ 
+--- a/gas/config/tc-mips.c
++++ b/gas/config/tc-mips.c
+@@ -518,6 +518,10 @@
+ /* KMC: --fp-move-nops pads coprocessor moves and FP compares the way an
+    unpatched assembler at ISA 1 would (the libultra objects need it).  */
+ int kmc_fp_nops = 0;
++/* KMC: with a base register, KMC's assembler expands lw rd,sym(idx) through
++   $at (the game units); the ROM's libultra objects were assembled by an
++   upstream-style gas that reuses rd (--lw-dest-temp clears this).  */
++int kmc_at_index = 1;
+ /* KMC: the ROM's assembler never leaves a float multiply in a branch delay
+    slot: it moves the multiply in front of the branch and puts a nop in the
+    slot (45 slots in our build, 0 in the ROM).  Not for the libultra unit
+@@ -3635,7 +3639,7 @@
+ 	 a base register is present (lui $at; addu $at,$at,$breg;
+ 	 <op> $treg,%lo(sym)($at)), where upstream gas reuses $treg.
+ 	 Nintendo 64 games built with it contain only the $at form.  */
+-      if (breg == treg || coproc || lr || breg != 0)
++      if (breg == treg || coproc || lr || (breg != 0 && kmc_at_index))
+ 	{
+ 	  tempreg = AT;
+ 	  used_at = 1;
